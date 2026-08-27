@@ -1,0 +1,116 @@
+﻿/* Markdown 内容样式：作用于 Agent 气泡内的渲染结果
+ * 颜色用相对值（气泡浅色/深色主题下均可读），不写死背景 */
+
+.markdown {
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* 段落与首尾元素留白收敛 */
+.markdown > :first-child {
+  margin-top: 0;
+}
+
+.markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown p {
+  margin: 0.4em 0;
+}
+
+/* 标题 */
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4 {
+  margin: 0.8em 0 0.4em;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.markdown h1 {
+  font-size: 1.25em;
+}
+
+.markdown h2 {
+  font-size: 1.15em;
+}
+
+.markdown h3,
+.markdown h4 {
+  font-size: 1.05em;
+}
+
+/* 列表 */
+.markdown ul,
+.markdown ol {
+  margin: 0.4em 0;
+  padding-left: 1.5em;
+}
+
+.markdown li {
+  margin: 0.15em 0;
+}
+
+/* GFM 表格：窄边框 + 表头底色，气泡内横向溢出可滚动 */
+.markdown table {
+  display: block;
+  max-width: 100%;
+  margin: 0.5em 0;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+
+.markdown th,
+.markdown td {
+  padding: 4px 10px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  font-size: 13px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.markdown th {
+  font-weight: 600;
+  background: rgba(0, 0, 0, 0.04);
+}
+
+/* 代码块与行内代码 */
+.markdown pre {
+  margin: 0.5em 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  overflow-x: auto;
+  background: #1f1f1f;
+  color: #ececec;
+}
+
+.markdown pre code {
+  padding: 0;
+  background: none;
+  color: inherit;
+  font-size: 12px;
+}
+
+.markdown code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.06);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+/* 引用与链接 */
+.markdown blockquote {
+  margin: 0.5em 0;
+  padding-left: 12px;
+  border-left: 3px solid rgba(0, 0, 0, 0.2);
+  color: #6e6e6e;
+}
+
+.markdown a {
+  color: #10a37f;
+  text-decoration: underline;
+  word-break: break-all;
+}

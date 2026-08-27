@@ -1,0 +1,141 @@
+/* ---------------------------------------------------------------------------
+ * 消息区：经典 ChatGPT 风格
+ *   用户消息：右对齐浅灰气泡 #f4f4f4（文字 #0d0d0d，圆角 20px）
+ *   Agent 消息：左对齐纯文本流式排版（无边框），左侧轻量圆形绿图标 #10a37f
+ * ------------------------------------------------------------------------- */
+
+/* 消息容器：对话区域宽度 60% 居中。
+ * 自身不产生滚动条（overflow 交给外层 .messageArea），
+ * 滚动条因此贴齐视口右侧而非容器右缘。 */
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 60%;
+  min-height: 100%;
+  margin: 0 auto;
+  padding: 20px 16px;
+}
+
+.empty {
+  margin: auto;
+  color: #a8a8a8;
+  font-size: 15px;
+}
+
+.userRow {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.assistantRow {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+/* 工具调用卡片容器：内嵌在 AI 气泡上方，纵向排列 */
+.toolCards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+  width: 100%;
+}
+
+/* Agent 消息行：图标 + 文本（横向） */
+.assistantLine {
+  display: flex;
+  align-items: flex-start;
+  width: 100%;
+}
+
+/* 轻量圆形 ChatGPT 绿底图标 */
+.assistantIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  margin-right: 10px;
+  border-radius: 999px;
+  background: #10a37f;
+  color: #fff;
+}
+
+/* 用户消息：右对齐浅灰气泡，大圆角 */
+.userBubble {
+  max-width: 82%;
+  padding: 10px 16px;
+  border-radius: 20px;
+  background: #f4f4f4;
+  color: #0d0d0d;
+  font-size: 16px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Agent 消息：纯文本流式排版，无生硬外边框 */
+.assistantBubble {
+  flex: 1;
+  min-width: 0;
+  color: #0d0d0d;
+  font-size: 16px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 流式输出打字光标：闪烁提示仍在接收增量 */
+.cursor {
+  display: inline-block;
+  margin-left: 2px;
+  color: #8e8e8e;
+  animation: blink 1s steps(2, start) infinite;
+}
+
+@keyframes blink {
+  to {
+    visibility: hidden;
+  }
+}
+
+.errorRow {
+  display: flex;
+  justify-content: flex-start;
+  padding-left: 38px;
+}
+
+.errorBubble {
+  max-width: 82%;
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: #fdecec;
+  color: #d94535;
+  font-size: 16px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+@media (prefers-color-scheme: dark) {
+  .userBubble {
+    background: #2f2f2f;
+    color: #ececec;
+  }
+
+  .assistantBubble {
+    color: #ececec;
+  }
+
+  .cursor {
+    color: #a8a8a8;
+  }
+
+  .errorBubble {
+    background: #442424;
+    color: #f08a7d;
+  }
+}

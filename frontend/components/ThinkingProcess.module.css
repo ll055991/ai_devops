@@ -1,0 +1,129 @@
+/* ---------------------------------------------------------------------------
+ * 深度思考卡片：ChatGPT 风格
+ *   白色卡片 + 浅灰圆角边框，左侧细指示边框（思考中绿 / 完成灰）
+ * ------------------------------------------------------------------------- */
+
+.card {
+  margin-bottom: 8px;
+  border-radius: 12px;
+  border: 1px solid #e5e5e5;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+/* 思考进行中态：左侧 ChatGPT 绿指示边框 */
+.thinking {
+  border-left: 3px solid #10a37f;
+}
+
+/* 思考完成态：左侧灰色指示边框 */
+.done {
+  border-left: 3px solid #d9d9e3;
+}
+
+/* 标题栏：可点击整行展开/收起 */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 13px;
+  color: #6e6e6e;
+  text-align: left;
+}
+
+.header:hover {
+  background: #f9f9f9;
+}
+
+/* 图标容器 */
+.icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: inherit;
+}
+
+/* 标题文本 */
+.title {
+  flex: 1;
+  font-weight: 500;
+}
+
+/* 折叠箭头 */
+.chevron {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.chevronOpen {
+  transform: rotate(180deg);
+}
+
+/* 思考内容区 */
+.body {
+  padding: 0 12px 10px 36px;
+  border-top: 1px solid #ececec;
+}
+
+/* 思考文本：小字号 + 弱化颜色 */
+.text {
+  margin: 8px 0 0;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #6e6e6e;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  background: none;
+}
+
+/* 旋转动画（思考进行中） */
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---- 深色模式 ---- */
+@media (prefers-color-scheme: dark) {
+  .card {
+    border-color: #3d3d3d;
+    background: #212121;
+  }
+
+  .thinking {
+    border-left-color: #10a37f;
+  }
+
+  .done {
+    border-left-color: #3d3d3d;
+  }
+
+  .header {
+    color: #a8a8a8;
+  }
+
+  .header:hover {
+    background: #2f2f2f;
+  }
+
+  .body {
+    border-top-color: #3d3d3d;
+  }
+
+  .text {
+    color: #a8a8a8;
+  }
+}

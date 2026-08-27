@@ -1,0 +1,135 @@
+/* ---------------------------------------------------------------------------
+ * 悬浮输入框：经典 ChatGPT 风格
+ *   居中药丸容器 max-width 800px、圆角 24px、背景 #f4f4f4、轻量外层投影
+ *   发送按钮：右侧黑色圆形小箭头（有文字激活黑色，禁用浅灰）
+ * ------------------------------------------------------------------------- */
+
+.composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  width: 60%;
+  margin: 12px auto 16px;
+  padding: 10px 10px 10px 18px;
+  border-radius: 24px;
+  background: #f4f4f4;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  /* 居中态与底部悬浮态之间的平滑过渡 */
+  transition: margin 0.25s ease, width 0.25s ease;
+}
+
+/* 居中模式（新建对话欢迎态）：由欢迎容器垂直定位，自身只留水平居中 */
+.composerCentered {
+  margin: 0 auto;
+}
+
+/* 自适应高度多行文本域：透明融入药丸容器 */
+.textarea {
+  flex: 1;
+  padding: 6px 4px;
+  border: none;
+  border-radius: 12px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #0d0d0d;
+  background: transparent;
+  outline: none;
+  resize: none;
+  overflow-y: auto;
+  height: auto;
+  max-height: 160px;
+  min-height: 36px;
+}
+
+.textarea::placeholder {
+  color: #a8a8a8;
+}
+
+.textarea:disabled {
+  color: #a8a8a8;
+  cursor: not-allowed;
+}
+
+/* 发送按钮：黑色圆形小箭头（禁用时浅灰） */
+.sendBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 999px;
+  background: #0d0d0d;
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.sendBtn:hover:not(:disabled) {
+  background: #1a1a1a;
+}
+
+.sendBtn:disabled {
+  background: #e3e3e3;
+  color: #a8a8a8;
+  cursor: not-allowed;
+}
+
+/* 停止响应按钮：浅灰圆形 */
+.stopBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 999px;
+  background: #ececec;
+  color: #0d0d0d;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.stopBtn:hover {
+  background: #e3e3e3;
+}
+
+@media (prefers-color-scheme: dark) {
+  .composer {
+    background: #2f2f2f;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+  }
+
+  .textarea {
+    color: #ececec;
+  }
+
+  .textarea::placeholder {
+    color: #8e8e8e;
+  }
+
+  .sendBtn {
+    background: #ececec;
+    color: #212121;
+  }
+
+  .sendBtn:hover:not(:disabled) {
+    background: #ffffff;
+  }
+
+  .sendBtn:disabled {
+    background: #3d3d3d;
+    color: #6e6e6e;
+  }
+
+  .stopBtn {
+    background: #3d3d3d;
+    color: #ececec;
+  }
+
+  .stopBtn:hover {
+    background: #4a4a4a;
+  }
+}

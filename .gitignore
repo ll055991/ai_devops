@@ -1,0 +1,54 @@
+# ================= 环境变量（含真实密钥，一律不提交） =================
+.env
+.env.*
+!.env.example
+!.env.development.example
+
+# ================= 后端（Python / uv） =================
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+# 对话记忆落盘（SQLite checkpoint）
+backend/checkpoints/
+# 运行日志
+logs/
+backend/logs/
+
+# ================= 前端（Node / Next.js） =================
+node_modules/
+.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+.next/
+out/
+build/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+.vercel
+
+# ================= 系统 / IDE =================
+.DS_Store
+Thumbs.db
+*.pem
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ================= 杂项 =================
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*

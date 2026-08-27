@@ -1,0 +1,11 @@
+{
+  "container_names": [
+    "ontology-graph",
+    "wrong-container"
+  ],
+  "image_prefixes": [
+    "ontology/ontology-graph",
+    "infra/data-service",
+    "wrong/image"
+  ]
+}

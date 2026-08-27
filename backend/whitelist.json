@@ -1,0 +1,13 @@
+{
+  "container_names": [
+    "ontology-graph:ctc_jt_1.1.1",
+    "ontology-graph",
+    "ontology-graph111",
+    "ontology-graph1112",
+    "ontology-graph-0827-01"
+  ],
+  "image_prefixes": [
+    "ontology-graph",
+    "ontology-graph1112"
+  ]
+}

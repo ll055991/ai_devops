@@ -1,0 +1,222 @@
+/* ---------------------------------------------------------------------------
+ * 工具卡片：ChatGPT 风格折叠卡片
+ *   浅灰圆角边框、折叠式工具图标、右侧小折叠箭头
+ *   成功态 ChatGPT 绿 #10a37f
+ * ------------------------------------------------------------------------- */
+
+.card {
+  margin-bottom: 8px;
+  border: 1px solid #e5e5e5;
+  border-radius: 12px;
+  background: #ffffff;
+  overflow: hidden;
+  transition: background 0.15s;
+}
+
+.card:hover {
+  background: #fafafa;
+}
+
+.cardFailed {
+  border-color: #f0b4ac;
+}
+
+/* 折叠条：紧凑小条 */
+.trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 12px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: #6e6e6e;
+}
+
+.trigger:hover {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+/* 工具图标：灰色折叠式图标 */
+.icon {
+  display: inline-flex;
+  align-items: center;
+  color: #6e6e6e;
+  flex-shrink: 0;
+}
+
+.name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #0d0d0d;
+  white-space: nowrap;
+}
+
+.hint {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: #a8a8a8;
+}
+
+/* 状态标记：运行中灰字脉冲 / 成功绿勾 / 失败红叉 */
+.pending {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 12px;
+  color: #6e6e6e;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.ok {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: #10a37f;
+}
+
+.err {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: #d94535;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.4;
+  }
+}
+
+/* 右侧小折叠箭头：收起时旋转 -90 度 */
+.chevronClosed {
+  transform: rotate(-90deg);
+  transition: transform 0.15s ease;
+}
+
+.chevronOpen {
+  transform: rotate(0deg);
+  transition: transform 0.15s ease;
+}
+
+/* 展开内容区 */
+.body {
+  padding: 10px 12px 12px;
+  border-top: 1px solid #ececec;
+  background: #fafafa;
+}
+
+.section {
+  margin-top: 10px;
+}
+
+.sectionLabel {
+  font-size: 11px;
+  font-weight: 500;
+  color: #8e8e8e;
+}
+
+/* 参数/结果：浅灰代码块。
+ * max-height + overflow-y 锁定展示高度：超长内容（如数百行日志/SKILL.md）
+ * 只能在 240px 窗口内滚动，严禁撑高父容器撑爆聊天框。 */
+.pre {
+  margin-top: 6px;
+  padding: 10px 12px;
+  border: 1px solid #ececec;
+  border-radius: 8px;
+  background: #f4f4f4;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #0d0d0d;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+/* 长内容折叠提示：展示在可滚动窗口顶部 */
+.longHint {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #8e8e8e;
+}
+
+/* 失败摘要行：error_type + message（参考 ToolFallbackError 的样式思路） */
+.errorLine {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #d94535;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 成功且无 result 内容时的占位提示 */
+.okLine {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #0d0d0d;
+}
+
+@media (prefers-color-scheme: dark) {
+  .card {
+    border-color: #3d3d3d;
+    background: #212121;
+  }
+
+  .card:hover {
+    background: #2a2a2a;
+  }
+
+  .cardFailed {
+    border-color: #7a3a35;
+  }
+
+  .trigger:hover {
+    background: rgba(255, 255, 255, 0.03);
+  }
+
+  .name {
+    color: #ececec;
+  }
+
+  .icon {
+    color: #a8a8a8;
+  }
+
+  .body {
+    border-top-color: #3d3d3d;
+    background: #1b1b1b;
+  }
+
+  .pre {
+    border-color: #3d3d3d;
+    background: #2f2f2f;
+    color: #ececec;
+  }
+
+  .pending {
+    color: #a8a8a8;
+  }
+
+  .ok {
+    color: #4fd1ac;
+  }
+
+  .err {
+    color: #f08a7d;
+  }
+
+  .errorLine {
+    color: #f08a7d;
+  }
+}

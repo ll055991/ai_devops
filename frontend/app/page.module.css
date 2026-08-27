@@ -1,0 +1,250 @@
+/* ---------------------------------------------------------------------------
+ * 对话主页面布局：经典 ChatGPT 风格
+ *
+ * 整体：全屏高度 flex 横向双栏
+ *   左侧：浅灰侧边栏（#f9f9f9 + 右边框 #ececec）
+ *   右侧：主工作区（纯白背景）
+ *     页头（细分割线）
+ *     └ 状态条（ChatGPT 风格胶囊阶段条）
+ *     └ 主体：消息区（助手无边框流式文本 + 圆形绿图标）
+ *     └ 悬浮输入框（居中药丸容器，圆形箭头发送按钮）
+ * ------------------------------------------------------------------------- */
+
+.page {
+  display: flex;
+  flex-direction: row;
+  height: 100vh;
+  height: 100dvh;
+  background: #ffffff;
+  color: #0d0d0d;
+  font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei",
+    sans-serif;
+}
+
+/* 右侧主工作区：纵向排列页头/状态条/主体/发送框 */
+.main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* 页头：极简，仅细分隔线 */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  border-bottom: 1px solid #ececec;
+  background: #ffffff;
+}
+
+.logo {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+.headerLeft {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* 页头「新建会话」：ChatGPT 风格浅色胶囊按钮 */
+.headerNewBtn {
+  padding: 5px 14px;
+  border: 1px solid #e3e3e3;
+  border-radius: 999px;
+  background: #ffffff;
+  font-size: 12px;
+  cursor: pointer;
+  color: #0d0d0d;
+  transition: background 0.15s;
+}
+
+.headerNewBtn:hover {
+  background: #f4f4f4;
+}
+
+/* Agent 状态徽标：ChatGPT 绿色强调 */
+.stateBadge {
+  padding: 3px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.stateIdle {
+  background: #f4f4f4;
+  color: #6e6e6e;
+}
+
+.stateRunning {
+  background: #10a37f;
+  color: #fff;
+}
+
+.stateAwaiting {
+  background: #f4f4f4;
+  color: #8e8e8e;
+}
+
+.stateCompleted {
+  background: #e7f6f2;
+  color: #10a37f;
+}
+
+.stateError {
+  background: #fdecec;
+  color: #d94535;
+}
+
+/* 主体：消息区伸缩占满。
+ * min-height: 0 + overflow 是 flex 子项内部滚动的两个关键条件。
+ */
+.body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.messageArea {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* 新建对话欢迎态：整体垂直居中（ChatGPT / Gemini 首页风格） */
+.welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  gap: 28px;
+  padding: 24px 16px;
+  animation: welcomeIn 0.35s ease;
+}
+
+.welcomeTitle {
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  animation: fadeUp 0.3s ease;
+}
+
+/* 随机快捷功能胶囊：依次入场 */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  max-width: 60%;
+}
+
+.chip {
+  padding: 8px 16px;
+  border: 1px solid #e3e3e3;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #0d0d0d;
+  font-size: 13px;
+  cursor: pointer;
+  opacity: 0;
+  animation: fadeUp 0.35s ease forwards;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.chip:hover {
+  background: #f4f4f4;
+  border-color: #10a37f;
+  color: #10a37f;
+}
+
+/* 欢迎态整体入场：淡入 + 轻微上移 */
+@keyframes welcomeIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 标题/胶囊元素入场：淡入 + 上移 */
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .page {
+    background: #212121;
+    color: #ececec;
+  }
+
+  .header {
+    border-color: #333333;
+    background: #212121;
+  }
+
+  .headerNewBtn {
+    border-color: #3d3d3d;
+    background: #2f2f2f;
+    color: #ececec;
+  }
+
+  .headerNewBtn:hover {
+    background: #3d3d3d;
+  }
+
+  .stateIdle {
+    background: #2f2f2f;
+    color: #a8a8a8;
+  }
+
+  .stateRunning {
+    background: #10a37f;
+    color: #fff;
+  }
+
+  .stateAwaiting {
+    background: #2f2f2f;
+    color: #a8a8a8;
+  }
+
+  .stateCompleted {
+    background: #123d33;
+    color: #4fd1ac;
+  }
+
+  .stateError {
+    background: #442424;
+    color: #f08a7d;
+  }
+
+  .chip {
+    border-color: #3d3d3d;
+    background: #2f2f2f;
+    color: #ececec;
+  }
+
+  .chip:hover {
+    background: #3d3d3d;
+    border-color: #10a37f;
+    color: #4fd1ac;
+  }
+}
