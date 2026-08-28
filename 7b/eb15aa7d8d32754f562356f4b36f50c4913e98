@@ -1,0 +1,166 @@
+backend/skills/deployment/SKILL.md
+  s_b82f32183a240a::t_c9eca32aba9a5c 79
+  s_4fcf37c29e533b::t_5b313af38ec3d9 196
+  s_b82f32183a240a::t_4bc20c8c6753db 204
+  s_b82f32183a240a::t_921326ea537a67 629
+  s_b82f32183a240a::t_4470734e2198ec 254
+  s_7f4fb13343313f::t_2c4eecd16a734c 186
+  s_8127384003f38c::t_d18de4f9f73ba9 317
+  s_b82f32183a240a::t_ea58960d3cb5e8 12,17
+  s_b82f32183a240a::t_7e62a86f5a3bd7 208
+  s_b82f32183a240a::t_231e56c75fee74 106-107
+  s_ad9219ec238703::t_af13ca36eab9fd 97
+  s_b82f32183a240a::t_1f953a409dbeec 87
+  s_84268b5cdf8e46::t_2eac6b7742649c 278
+  s_b82f32183a240a::t_a8e2a5e0a4c066 407
+  s_b82f32183a240a::t_d28ef837378167 489
+  s_5f0f726aee8c7f::t_524793ad6c102e 88
+  s_24b08bc398be28::t_678d07b6336777 37,47
+  s_b82f32183a240a::t_6014a258bd061c 557
+  s_b82f32183a240a::t_46bac31ae201be 627
+  s_b82f32183a240a::t_4ec20023475be2 294
+  s_b82f32183a240a::t_23c8c15bef9118 179
+  s_b82f32183a240a::t_e65ffa44601cba 15-16
+  s_24b08bc398be28::t_808b0208cd43df 36
+backend/.env.example
+  s_b82f32183a240a::t_4e23263dc1ee25 20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "7beb15aa7d8d32754f562356f4b36f50c4913e98",
+  "prompts": {},
+  "humans": {
+    "h_57d576e2179c9d": {
+      "author": "考神保佑 <2762055991@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_24b08bc398be28": {
+      "agent_id": {
+        "tool": "trae-code-edit",
+        "id": "ai_tab-202608271753000100021530593778CB0",
+        "model": "default"
+      },
+      "human_author": "考神保佑 <2762055991@qq.com>",
+      "custom_attributes": {
+        "client_type": "ide",
+        "external_session_id": "202608271753000100021530593778CB0",
+        "tool": "trae-code-edit",
+        "edit_kind": "file_edit",
+        "source_scene": "cue"
+      }
+    },
+    "s_4fcf37c29e533b": {
+      "agent_id": {
+        "tool": "trae-code-edit",
+        "id": "ai_tab-20260827175337010000051099353E56A",
+        "model": "default"
+      },
+      "human_author": "考神保佑 <2762055991@qq.com>",
+      "custom_attributes": {
+        "client_type": "ide",
+        "edit_kind": "file_edit",
+        "source_scene": "cue",
+        "tool": "trae-code-edit",
+        "external_session_id": "20260827175337010000051099353E56A"
+      }
+    },
+    "s_5f0f726aee8c7f": {
+      "agent_id": {
+        "tool": "trae-code-edit",
+        "id": "ai_tab-20260827175306010001125075539CF6B",
+        "model": "default"
+      },
+      "human_author": "考神保佑 <2762055991@qq.com>",
+      "custom_attributes": {
+        "source_scene": "cue",
+        "external_session_id": "20260827175306010001125075539CF6B",
+        "client_type": "ide",
+        "edit_kind": "file_edit",
+        "tool": "trae-code-edit"
+      }
+    },
+    "s_7f4fb13343313f": {
+      "agent_id": {
+        "tool": "trae-code-edit",
+        "id": "ai_tab-20260827175334010001124118499AF30",
+        "model": "default"
+      },
+      "human_author": "考神保佑 <2762055991@qq.com>",
+      "custom_attributes": {
+        "edit_kind": "file_edit",
+        "source_scene": "cue",
+        "external_session_id": "20260827175334010001124118499AF30",
+        "tool": "trae-code-edit",
+        "client_type": "ide"
+      }
+    },
+    "s_8127384003f38c": {
+      "agent_id": {
+        "tool": "trae-code-edit",
+        "id": "ai_tab-202608271753500100000200255431A58",
+        "model": "default"
+      },
+      "human_author": "考神保佑 <2762055991@qq.com>",
+      "custom_attributes": {
+        "edit_kind": "file_edit",
+        "tool": "trae-code-edit",
+        "external_session_id": "202608271753500100000200255431A58",
+        "source_scene": "cue",
+        "client_type": "ide"
+      }
+    },
+    "s_84268b5cdf8e46": {
+      "agent_id": {
+        "tool": "trae-code-edit",
+        "id": "ai_tab-20260827175345010000047044792F83D",
+        "model": "default"
+      },
+      "human_author": "考神保佑 <2762055991@qq.com>",
+      "custom_attributes": {
+        "edit_kind": "file_edit",
+        "client_type": "ide",
+        "source_scene": "cue",
+        "external_session_id": "20260827175345010000047044792F83D",
+        "tool": "trae-code-edit"
+      }
+    },
+    "s_ad9219ec238703": {
+      "agent_id": {
+        "tool": "trae-code-edit",
+        "id": "ai_tab-2026082717531001000315623476427D8",
+        "model": "default"
+      },
+      "human_author": "考神保佑 <2762055991@qq.com>",
+      "custom_attributes": {
+        "external_session_id": "2026082717531001000315623476427D8",
+        "edit_kind": "file_edit",
+        "client_type": "ide",
+        "tool": "trae-code-edit",
+        "source_scene": "cue"
+      }
+    },
+    "s_b82f32183a240a": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a900078d8825dc6e1a94cf3",
+        "model": "glm-5.3__dev"
+      },
+      "human_author": "考神保佑 <2762055991@qq.com>",
+      "custom_attributes": {
+        "tool_id": "Edit",
+        "client_type": "ide",
+        "source_scene": "unknown",
+        "dedupe_key": "6a900078d8825dc6e1a94cf3:6a900704d8825dc6e1a94dbc:afterEdit:ff66b074",
+        "runtime_client": "trae-tob-git-ai",
+        "edit_kind": "file_edit",
+        "external_session_id": "6a900078d8825dc6e1a94cf3",
+        "tool_use_id": "6a900704d8825dc6e1a94dbc",
+        "session_id": "6a900078d8825dc6e1a94cf3",
+        "operation_id": "6a900704d8825dc6e1a94dbc",
+        "tool_type": "agent"
+      }
+    }
+  }
+}
