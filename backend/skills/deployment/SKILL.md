@@ -1,6 +1,6 @@
 ---
 name: deployment
-description: 部署技能文档，指导 Agent 完成代码拉取、镜像构建、容器停止/删除/启动、健康检查、工作区文件操作和白名单管理的全流程
+description: 部署技能文档，指导 Agent 完成代码拉取、镜像构建、容器停止/删除/启动、健康检查、工作区文件操作、白名单管理、环境巡检、日志诊断与部署状态查询的全流程
 ---
 
 # 部署技能文档（Deployment Skill）
@@ -619,6 +619,226 @@ description: 部署技能文档，指导 Agent 完成代码拉取、镜像构建
 | cannot_remove_last | 白名单只剩 1 条 | 先添加新条目再删旧的 |
 | persist_failed | 写 whitelist.json 失败 | 检查磁盘/权限 |
 
+## 工具 16：check_server_environment
+
+### 用途
+检查目标服务器环境（只读巡检，无审批）：docker/git 版本、根分区磁盘、内存使用。部署前确认服务器就绪，或部署异常时排查基础设施问题。
+
+### 参数表
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| （无参数） | - | - | 目标服务器来自系统配置 |
+
+### 调用示例
+
+```json
+{}
+```
+
+### 返回示例（成功）
+
+```json
+{
+  "success": true,
+  "host": "10.1.248.143",
+  "docker_version": "Docker version 26.1.3, build b72abbb",
+  "git_version": "git version 2.39.2",
+  "disk": {"filesystem": "/dev/vda1", "size": "100G", "used": "62G", "avail": "34G", "use_percent": "65%", "mounted": "/"},
+  "memory": {"total_mb": 15966, "used_mb": 4098, "free_mb": 8000, "available_mb": 11546}
+}
+```
+
+### 常见错误
+
+| error_type | 原因 | 处理 |
+|---|---|---|
+| command_failed | 巡检命令执行失败 | 检查 SSH 与服务器状态 |
+| ssh_error | SSH 连接失败 | 检查服务器可达性 |
+
+## 工具 17：get_container_logs
+
+### 用途
+获取容器日志（只读诊断，无审批）。部署验证失败或服务异常时，拉取日志定位问题。`container_name` 不校验白名单，由调用方保证合法。
+
+### 参数表
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| container_name | string | 是 | 容器名 |
+| tail | integer | 否 | 最近日志行数（1~1000，默认 100） |
+| keyword | string | 否 | 关键字过滤，非空时只返回包含该关键字的行（固定字符串匹配） |
+
+### 调用示例
+
+```json
+{ "container_name": "ontology-graph", "tail": 200, "keyword": "ERROR" }
+```
+
+### 返回示例（成功）
+
+```json
+{
+  "success": true,
+  "container_name": "ontology-graph",
+  "count": 2,
+  "lines": [
+    "2026-08-20T10:30:01Z ERROR Connection refused: 127.0.0.1:3306",
+    "2026-08-20T10:30:02Z ERROR retry 1/3 ..."
+  ],
+  "truncated": false
+}
+```
+
+### 常见错误
+
+| error_type | 原因 | 处理 |
+|---|---|---|
+| validation_error | container_name 为空 / tail 超范围 | 用合法参数 |
+| command_failed | docker logs 失败（容器不存在） | 确认容器名与容器状态 |
+| ssh_error | SSH 连接失败 | 检查服务器可达性 |
+
+## 工具 18：get_deployment_status
+
+### 用途
+查询指定会话（thread_id）的部署状态（只读，无审批）。部署过程中或部署后确认当前进度与关键状态（commit/image/container/status）。查询不到记录是正常结果（`found=false`），不代表错误。
+
+### 参数表
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| thread_id | string | 是 | 会话 ID（一次部署 = 一个会话一条记录） |
+
+### 调用示例
+
+```json
+{ "thread_id": "t-1780000000" }
+```
+
+### 返回示例（成功，有记录）
+
+```json
+{
+  "success": true,
+  "found": true,
+  "deployment": {
+    "id": 1,
+    "thread_id": "t-1780000000",
+    "repo_url": "http://10.19.72.176:8190/xxx/xxx.git",
+    "branch": "ct-1.1.1",
+    "commit": "a81f92c",
+    "image": "my-app:ct-1.1.1",
+    "container": "ontology-graph",
+    "environment": "/data/deploy/workspace",
+    "status": "deploying",
+    "error": null,
+    "rollback_from": null,
+    "created_at": "2026-08-20T10:00:00",
+    "updated_at": "2026-08-20T10:30:00"
+  }
+}
+```
+
+### 返回示例（成功，无记录）
+
+```json
+{ "success": true, "found": false, "deployment": null }
+```
+
+### 常见错误
+
+| error_type | 原因 | 处理 |
+|---|---|---|
+| validation_error | thread_id 为空 | 用合法 thread_id |
+| state_error | 状态库查询失败 | 重试或检查状态库 |
+
+## 工具 19：list_deployment_history
+
+### 用途
+查询部署历史（只读，无审批），按时间倒序（最新在前）。用于对比历史版本、判断本次部署是升级还是回退。
+
+### 参数表
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| container | string | 否 | 容器名过滤，空则查全部 |
+| limit | integer | 否 | 返回条数上限（1~100，默认 20） |
+
+### 调用示例
+
+```json
+{ "container": "ontology-graph", "limit": 5 }
+```
+
+### 返回示例（成功）
+
+```json
+{
+  "success": true,
+  "count": 2,
+  "history": [
+    {"id": 2, "thread_id": "t-...", "commit": "b22f001", "image": "my-app:ct-1.1.2", "container": "ontology-graph", "status": "healthy", ...},
+    {"id": 1, "thread_id": "t-...", "commit": "a81f92c", "image": "my-app:ct-1.1.1", "container": "ontology-graph", "status": "rolled_back", ...}
+  ]
+}
+```
+
+### 常见错误
+
+| error_type | 原因 | 处理 |
+|---|---|---|
+| validation_error | limit 超范围 | 用 1~100 之间的值 |
+| state_error | 状态库查询失败 | 重试或检查状态库 |
+
+## 工具 20：rollback_deployment
+
+### 用途
+回滚部署：用历史部署记录中的镜像重新部署目标容器（停旧容器 → 删除 → 启动）。**触发人工审批**。用于新版本部署验证失败后恢复到历史可用版本，是「自动诊断闭环」的恢复手段。
+
+### 参数表
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| deployment_id | integer | 是 | 目标部署记录 id（`list_deployment_history` 查询可得），必须存在且有镜像信息 |
+| container_name | string | 否 | 目标容器名，缺省用历史记录中的容器名；必须命中 CONTAINER_NAMES 白名单 |
+
+### 调用示例
+
+```json
+{ "deployment_id": 3, "container_name": "ontology-graph" }
+```
+
+### 返回示例（成功）
+
+```json
+{
+  "success": true,
+  "container": "ontology-graph",
+  "image": "my-app:ct-1.1.1",
+  "rollback_from": 3
+}
+```
+
+### 返回示例（失败）
+
+```json
+{
+  "success": false,
+  "error_type": "not_found",
+  "message": "部署记录不存在: deployment_id=99",
+  "deployment_id": 99
+}
+```
+
+### 常见错误
+
+| error_type | 原因 | 处理 |
+|---|---|---|
+| validation_error | deployment_id 非正整数 / 记录无镜像 / 容器名不在白名单 | 用 `list_deployment_history` 确认目标记录与白名单 |
+| not_found | 部署记录不存在 | 用 list_deployment_history 查有效 id |
+| command_failed | 删除或启动容器失败 | 看 stderr（端口冲突、镜像缺失等） |
+| state_error | 状态库查询失败 | 重试 |
+
 ## 标准部署流程（SOP）
 
 按以下顺序执行，不得跳步：
@@ -645,3 +865,16 @@ description: 部署技能文档，指导 Agent 完成代码拉取、镜像构建
 - 工具返回 `success=false` 时，先向用户说明 `error_type` 和 `message`。
 - 可重试一次（相同参数）。
 - 仍失败则如实报告，不继续后续步骤。
+
+## 部署验证失败诊断与回滚 SOP
+
+`check_service_health` 返回 `unhealthy` 或失败时，**禁止直接宣告部署失败结束**，必须按以下闭环诊断，能恢复则恢复：
+
+1. **拉取容器日志**：调用 `get_container_logs`（tail 200~500，必要时带 keyword 如 `ERROR`/`Exception`），定位启动异常根因（端口冲突、依赖连不上、配置错误等）。
+2. **检查运行状态**：调用 `check_service_health` 复核容器状态与健康检查结果；结合 `check_server_environment` 排查磁盘/内存等基础设施问题。
+3. **对比部署历史**：调用 `list_deployment_history`（container 过滤）确认历史版本与本次镜像的差异，判断是否为新版本引入的问题。
+4. **决策恢复**：
+   - 若日志显示可修复问题（如配置错误）且用户同意修复：用 `write_workspace_file` 修改配置/代码后，从「标准部署流程（SOP）」第 4 步起重新构建部署。
+   - 若新版本确认异常且存在历史可用版本：调用 `rollback_deployment` 回滚到最近的 `healthy` 历史记录（**触发人工审批**），回滚成功后调用 `check_service_health` 验证服务恢复。
+   - 若无法定位根因或没有可回滚版本：如实向用户报告诊断结论与证据（日志要点、状态、历史对比），不擅自扩大操作范围。
+5. **回滚验证**：`rollback_deployment` 成功后必须 `check_service_health` 确认恢复 `healthy`，并向用户汇报回滚目标版本（image）与最终状态。

@@ -50,6 +50,7 @@ class Settings(BaseSettings):
     openai_base_url: AnyHttpUrl | None = Field(default=None, validation_alias="OPENAI_BASE_URL")
     openai_model: str = Field(default="gpt-4o-mini", validation_alias="OPENAI_MODEL")
     openai_temperature: float = Field(default=0.0, validation_alias="OPENAI_TEMPERATURE")
+    model_max_tokens: int = Field(default=8192, validation_alias="MODEL_MAX_TOKENS")
 
     # --- 代码仓库 ---
     # 仓库地址和分支由用户在对话中指定，不做白名单校验
@@ -89,9 +90,10 @@ class Settings(BaseSettings):
     docker_host: str | None = Field(default=None, validation_alias="DOCKER_HOST")
 
     # --- 必须人工审批的工具 ---
-    # 默认 stop/start container 需要审批，对应需求文档第七章
+    # 默认 stop/start container + rollback 需要审批，对应需求文档第七章与改造方案阶段 2
+    # 注意：若 .env 配置了 APPROVAL_REQUIRED_TOOLS，以 .env 为准（需自行包含 rollback_deployment）
     approval_required_tools_raw: str = Field(
-        default="stop_container,start_container",
+        default="stop_container,start_container,rollback_deployment",
         validation_alias="APPROVAL_REQUIRED_TOOLS",
     )
 

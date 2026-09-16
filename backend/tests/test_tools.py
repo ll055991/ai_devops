@@ -41,7 +41,14 @@ def _make_settings(whitelist_file: str = "__nonexistent_whitelist_test__.json") 
 
 @pytest.fixture
 def settings() -> Settings:
-    return _make_settings()
+    s = _make_settings()
+    yield s
+    # 清理：build/start 工具可能把测试白名单持久化到默认文件（自动加入白名单行为），
+    # teardown 删除该文件，防止 model_post_init 在下个测试里加载污染值
+    try:
+        s.whitelist_path.unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 # ==================== 参数校验分支（不走 SSH）====================
@@ -113,8 +120,20 @@ async def test_stop_container_wrong_name(settings):
     assert data["error_type"] == "validation_error"
 
 
-async def test_build_docker_image_wrong_prefix(settings):
-    """错误的 image_name 前缀必须返回失败 JSON。"""
+async def test_build_docker_image_auto_adds_prefix(settings, monkeypatch):
+    """image_name 不以已有前缀开头时自动加入前缀白名单（不再拒绝，与工具现状一致）。"""
+
+    async def fake_run_ssh(s, command, timeout=60):
+        if "echo FOUND" in command:
+            return 0, "FOUND:/data/test/Dockerfile\n", ""
+        return 0, "", ""
+
+    async def fake_run_ssh_stream(s, command, timeout=600, on_line=None):
+        return 0, "Successfully built abc123\n", ""
+
+    monkeypatch.setattr(tools, "_run_ssh", fake_run_ssh)
+    monkeypatch.setattr(tools, "_run_ssh_stream", fake_run_ssh_stream)
+
     build_tool = tools.build_docker_image_tool(settings)
     result = await build_tool.ainvoke(
         {
@@ -124,8 +143,9 @@ async def test_build_docker_image_wrong_prefix(settings):
         }
     )
     data = json.loads(result)
-    assert data["success"] is False
-    assert data["error_type"] == "validation_error"
+    assert data["success"] is True
+    # 前缀被自动加入白名单
+    assert "wrong/image" in settings.image_prefixes
 
 
 async def test_start_container_wrong_image_prefix(settings):
@@ -142,18 +162,29 @@ async def test_start_container_wrong_image_prefix(settings):
     assert data["error_type"] == "validation_error"
 
 
-async def test_start_container_wrong_container_name(settings):
-    """错误的 container_name 必须返回失败 JSON。"""
+async def test_start_container_auto_adds_container_name(settings, monkeypatch):
+    """container_name 不在白名单时自动加入（不再拒绝，与工具现状一致）。"""
+
+    async def fake_run_ssh(s, command, timeout=60):
+        # 前置检查：同名容器不存在
+        if "ps -a" in command:
+            return 0, "", ""
+        # docker run 成功
+        return 0, "container-id-999\n", ""
+
+    monkeypatch.setattr(tools, "_run_ssh", fake_run_ssh)
+
     start_tool = tools.build_start_container_tool(settings)
     result = await start_tool.ainvoke(
         {
-            "container_name": "wrong-container",
+            "container_name": "my-new-app",
             "image": "ontology/ontology-graph:v1",
         }
     )
     data = json.loads(result)
-    assert data["success"] is False
-    assert data["error_type"] == "validation_error"
+    assert data["success"] is True
+    # 容器名被自动加入白名单
+    assert "my-new-app" in settings.container_names
 
 
 # ==================== SSH 执行分支（monkeypatch _run_ssh）====================
@@ -582,10 +613,10 @@ async def test_check_service_health_unhealthy(settings, monkeypatch):
     assert data["http_status"] == "500"
 
 
-async def test_build_tools_returns_15(settings):
-    """build_tools 返回 15 个工具（8 个需审批写操作 + 7 个只读/巡检/文件操作）。"""
+async def test_build_tools_returns_20(settings):
+    """build_tools 返回 20 个工具（9 个需审批写操作 + 11 个只读/巡检/文件/状态查询）。"""
     tool_list = tools.build_tools(settings)
-    assert len(tool_list) == 15
+    assert len(tool_list) == 20
     names = [t.name for t in tool_list]
     assert "git_pull_code" in names
     assert "build_docker_image" in names
@@ -595,6 +626,11 @@ async def test_build_tools_returns_15(settings):
     assert "list_containers" in names
     assert "list_images" in names
     assert "check_dockerfile" in names
+    assert "check_server_environment" in names
+    assert "get_container_logs" in names
+    assert "get_deployment_status" in names
+    assert "list_deployment_history" in names
+    assert "rollback_deployment" in names
 
 
 # ==================== 新增只读工具：list_containers / list_images / check_dockerfile ====================

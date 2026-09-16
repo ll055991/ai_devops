@@ -37,6 +37,8 @@ from pydantic import BaseModel
 
 from deploy_agent.factory import create_deploy_agent
 from deploy_agent.settings import Settings, get_settings
+from deploy_agent.audit import close_audit_store, get_audit_store
+from deploy_agent.state import close_deployment_store
 from deploy_agent.tools import set_build_log_queue
 
 
@@ -80,7 +82,7 @@ TOOL_HINT_MAP: dict[str, str] = {
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """应用生命周期：启动无操作；退出时关闭检查点连接。
+    """应用生命周期：启动无操作；退出时关闭检查点与部署状态连接。
 
     避免 aiosqlite 后台线程在事件循环关闭后报 "Event loop is closed"。
     """
@@ -94,6 +96,8 @@ async def lifespan(app: FastAPI):
                 logger.info("检查点存储连接已关闭")
         except Exception as exc:
             logger.warning("MEMORY | event=checkpointer_close_failed | error={}", str(exc))
+    await close_deployment_store()
+    await close_audit_store()
 
 
 app = FastAPI(title="deploy-agent", version="0.1.0", lifespan=lifespan)
@@ -120,6 +124,20 @@ def _sse_event(event: str, data: dict[str, Any]) -> str:
     参考项目同名函数：f"event: {name}\\ndata: {json}\\n\\n"
     """
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False, default=str)}\n\n"
+
+
+def _error_body_snippet(exc: Exception, limit: int = 200) -> str:
+    """取网关错误响应体摘要（单行截断；响应体只有错误描述，不含密钥）。"""
+    response = getattr(exc, "response", None)
+    if response is None:
+        return "<none>"
+    try:
+        text = response.text
+    except Exception:
+        return "<unreadable>"
+    if not isinstance(text, str):
+        return "<non-text>"
+    return text.replace("\n", " ").strip()[:limit] or "<empty>"
 
 
 def _safe_get(d: dict[str, Any], *keys: str, default: Any = None) -> Any:
@@ -382,6 +400,33 @@ async def get_thread_messages(thread_id: str) -> Any:
         return JSONResponse(status_code=500, content={"success": False, "error": str(exc)})
 
 
+# ==================== 审计查询接口 ====================
+# 数据源 backend/checkpoints/audit.db（AuditLogMiddleware 落库），按时间倒序。
+
+
+@app.get("/api/agent/audit")
+async def list_audit(
+    thread_id: str | None = None,
+    tool_name: str | None = None,
+    limit: int = 50,
+) -> Any:
+    """查询操作审计记录（可选按 thread_id / tool_name 过滤，limit 1~200）。"""
+    try:
+        rows = await get_audit_store().list(
+            thread_id=thread_id, tool_name=tool_name, limit=limit
+        )
+        logger.info(
+            "AUDIT | event=queried | thread_id={} | tool={} | count={}",
+            thread_id or "<all>",
+            tool_name or "<all>",
+            len(rows),
+        )
+        return {"success": True, "records": rows, "count": len(rows)}
+    except Exception as exc:
+        logger.error("AUDIT | event=query_failed | error={}", str(exc), exc_info=True)
+        return JSONResponse(status_code=500, content={"success": False, "error": str(exc)})
+
+
 @app.delete("/api/agent/threads/{thread_id}")
 async def delete_thread(thread_id: str) -> Any:
     """删除指定线程的全部检查点数据（SQLite 持久化层物理删除）。
@@ -486,14 +531,13 @@ async def agent_chat(req: ChatRequest) -> StreamingResponse:
 
     async def event_generator() -> AsyncIterator[str]:
         """SSE 事件生成器。
-
-        参考 ai_native_invoke_stream 的流式翻译：
         - agent.astream(agent_input, config, stream_mode=["messages","updates"])
         - 流结束后调 aget_state(config).interrupts 判断是否被审批中断
         """
         final_result = ""
         stream_status = "completed"
         producer_task: asyncio.Task | None = None
+        t0 = time.perf_counter()
 
         try:
             # 发送 agent_state(running)
@@ -703,17 +747,27 @@ async def agent_chat(req: ChatRequest) -> StreamingResponse:
                     break
 
         except Exception as exc:
-            # 流异常：发 error 事件
+            # 流异常：发 error 事件（带状态码/响应摘要/耗时，下次排障有依据）
             stream_status = "error"
+            elapsed_ms = int((time.perf_counter() - t0) * 1000)
+            status_code = getattr(exc, "status_code", None)
             logger.error(
-                "SSE | event=stream_error | thread_id={} | error={}",
+                "SSE | event=stream_error | thread_id={} | elapsed={}ms | status={} | error={} | body={}",
                 thread_id,
-                str(exc),
+                elapsed_ms,
+                status_code if status_code is not None else "<none>",
+                str(exc).replace("\n", " ")[:500],
+                _error_body_snippet(exc),
                 exc_info=True,
             )
             yield _sse_event(
                 "error",
-                {"thread_id": thread_id, "message": str(exc)},
+                {
+                    "thread_id": thread_id,
+                    "message": str(exc),
+                    "status_code": status_code,
+                    "elapsed_ms": elapsed_ms,
+                },
             )
             return
         finally:

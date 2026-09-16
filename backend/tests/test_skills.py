@@ -123,6 +123,16 @@ def test_prompt_contains_skill_read_rule(settings):
     assert "SKILL.md" in rendered
 
 
+def test_prompt_contains_file_tool_boundary(settings):
+    """提示词必须划清虚拟文件系统与目标服务器的工具边界（read_file 陷阱）。"""
+    rendered = render_system_prompt(settings)
+    assert "read_workspace_file" in rendered
+    assert "虚拟文件系统" in rendered
+    assert "读不到目标服务器" in rendered
+    # 禁止相同参数反复重试
+    assert "反复重试" in rendered
+
+
 def test_prompt_contains_order_constraints(settings):
     """提示词必须含部署顺序约束 + 审批闸门。"""
     rendered = render_system_prompt(settings)

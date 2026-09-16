@@ -32,6 +32,7 @@ from langchain.tools import tool
 from loguru import logger
 
 from deploy_agent.settings import Settings
+from deploy_agent.state import DeploymentStateStore, get_deployment_store
 
 # ==================== 辅助函数 ====================
 
@@ -2029,8 +2030,516 @@ def build_remove_whitelist_entry_tool(settings: Settings):
     return remove_whitelist_entry
 
 
+def build_check_server_environment_tool(settings: Settings):
+    """构建 check_server_environment 工具（只读巡检，不入审批名单）。
+
+    无参数。SSH 执行一条组合命令巡检：
+    - docker 版本（docker --version）
+    - git 版本（git --version）
+    - 根分区磁盘（df -h /）
+    - 内存（free -m）
+    返回：{success, host, docker_version, git_version, disk:{...}, memory:{...}}
+    docker/git 未安装时版本字段为命令错误文本，照实返回（巡检工具如实上报）。
+    """
+
+    @tool
+    async def check_server_environment() -> str:
+        """检查目标服务器环境：docker/git 版本、根分区磁盘、内存使用情况。"""
+        tool_name = "check_server_environment"
+        start = time.perf_counter()
+        logger.info("tool={} | args=<none>", tool_name)
+
+        cmd = (
+            "echo '===DOCKER==='; docker --version 2>&1 | head -1; "
+            "echo '===GIT==='; git --version 2>&1 | head -1; "
+            "echo '===DISK==='; df -h / | tail -1 | "
+            "awk '{print $1\"|\"$2\"|\"$3\"|\"$4\"|\"$5\"|\"$6}'; "
+            "echo '===MEM==='; free -m | sed -n '2p' | "
+            "awk '{print $2\"|\"$3\"|\"$4\"|\"$7}'; "
+            "echo '===END==='"
+        )
+        logger.info(
+            "tool={} | host={} | cmd={}",
+            tool_name,
+            settings.server_host,
+            _cmd_summary(cmd),
+        )
+        try:
+            exit_code, out, err = await _run_ssh(settings, cmd)
+            if exit_code != 0:
+                elapsed = _elapsed_ms(start)
+                logger.error(
+                    "tool={} | error=inspect_failed exit={} | elapsed={}ms",
+                    tool_name,
+                    exit_code,
+                    elapsed,
+                )
+                return _err(
+                    "command_failed",
+                    "环境巡检命令执行失败",
+                    exit_code=exit_code,
+                    stderr=err,
+                )
+
+            # 按 ===xxx=== 标记分段解析
+            sections: dict[str, list[str]] = {}
+            current: str | None = None
+            for line in out.splitlines():
+                stripped = line.strip()
+                if stripped.startswith("===") and stripped.endswith("==="):
+                    current = stripped.strip("=")
+                    sections[current] = []
+                elif current:
+                    sections[current].append(stripped)
+
+            docker_lines = sections.get("DOCKER", [])
+            git_lines = sections.get("GIT", [])
+            disk_parts = sections.get("DISK", [""])[0].split("|") if sections.get("DISK") else []
+            mem_parts = sections.get("MEM", [""])[0].split("|") if sections.get("MEM") else []
+
+            def _to_int(value: str) -> int | None:
+                return int(value) if value.isdigit() else None
+
+            disk = {}
+            if len(disk_parts) >= 6:
+                disk = {
+                    "filesystem": disk_parts[0],
+                    "size": disk_parts[1],
+                    "used": disk_parts[2],
+                    "avail": disk_parts[3],
+                    "use_percent": disk_parts[4],
+                    "mounted": disk_parts[5],
+                }
+            memory = {}
+            if len(mem_parts) >= 4:
+                memory = {
+                    "total_mb": _to_int(mem_parts[0]),
+                    "used_mb": _to_int(mem_parts[1]),
+                    "free_mb": _to_int(mem_parts[2]),
+                    "available_mb": _to_int(mem_parts[3]),
+                }
+
+            elapsed = _elapsed_ms(start)
+            logger.info("tool={} | ok | elapsed={}ms", tool_name, elapsed)
+            return _ok(
+                host=settings.server_host,
+                docker_version=docker_lines[0] if docker_lines else "",
+                git_version=git_lines[0] if git_lines else "",
+                disk=disk,
+                memory=memory,
+            )
+        except Exception as e:
+            elapsed = _elapsed_ms(start)
+            logger.error(
+                "tool={} | error={} | elapsed={}ms",
+                tool_name,
+                str(e),
+                elapsed,
+                exc_info=True,
+            )
+            return _err("ssh_error", f"SSH 执行失败: {e}")
+
+    return check_server_environment
+
+
+def build_get_container_logs_tool(settings: Settings):
+    """构建 get_container_logs 工具（只读诊断，不入审批名单）。
+
+    SSH 执行：docker logs --tail N --timestamps container 2>&1，
+    keyword 非空时追加 grep -F 固定字符串过滤（|| true 防止 grep 无匹配退出码 1）。
+    container_name 非空校验 + shlex.quote 防注入（与 check_service_health 一致，
+    本工具不校验白名单，由调用方保证合法）。
+    返回行数上限 500（诊断看最新日志，超出返回后 500 行 + truncated=true）。
+    """
+
+    @tool
+    async def get_container_logs(
+        container_name: str, tail: int = 100, keyword: str | None = None
+    ) -> str:
+        """获取容器日志（诊断部署异常用）。
+
+        Args:
+            container_name: 容器名（本工具不校验白名单，由调用方保证合法）
+            tail: 最近日志行数（1~1000，默认 100）
+            keyword: 可选关键字，非空时只返回包含该关键字的行（固定字符串匹配）
+        """
+        tool_name = "get_container_logs"
+        start = time.perf_counter()
+        logger.info(
+            "tool={} | args=container_name={} tail={} keyword={}",
+            tool_name,
+            container_name,
+            tail,
+            keyword,
+        )
+
+        # 参数校验
+        if not container_name or not container_name.strip():
+            elapsed = _elapsed_ms(start)
+            logger.error(
+                "tool={} | error=empty_container_name | elapsed={}ms",
+                tool_name,
+                elapsed,
+            )
+            return _err("validation_error", "container_name 不能为空")
+        if not 1 <= int(tail) <= 1000:
+            elapsed = _elapsed_ms(start)
+            logger.error(
+                "tool={} | error=invalid_tail | elapsed={}ms", tool_name, elapsed
+            )
+            return _err("validation_error", "tail 必须在 1~1000 之间", tail=tail)
+
+        # shlex.quote 防 shell 注入（容器名未经白名单约束，必须引用）
+        container_q = shlex.quote(container_name)
+        cmd = f"docker logs --tail {int(tail)} --timestamps {container_q} 2>&1"
+        if keyword and keyword.strip():
+            # grep -F 固定字符串匹配（防正则元字符注入）；-- 防 - 开头参数注入
+            # || true：grep 无匹配时退出码 1，避免整条命令误判失败
+            kw_q = shlex.quote(keyword.strip())
+            cmd += f" | grep -F -- {kw_q} || true"
+        logger.info(
+            "tool={} | host={} | cmd={}",
+            tool_name,
+            settings.server_host,
+            _cmd_summary(cmd),
+        )
+        try:
+            exit_code, out, err = await _run_ssh(settings, cmd)
+            if exit_code != 0:
+                elapsed = _elapsed_ms(start)
+                logger.error(
+                    "tool={} | error=logs_failed exit={} | elapsed={}ms",
+                    tool_name,
+                    exit_code,
+                    elapsed,
+                )
+                return _err(
+                    "command_failed",
+                    "docker logs 失败（容器可能不存在）",
+                    exit_code=exit_code,
+                    stderr=err,
+                )
+
+            lines = [line for line in out.splitlines() if line.strip()]
+            # 行数上限 500：诊断看最新日志，超出截断并标记
+            truncated = len(lines) > 500
+            lines = lines[-500:] if truncated else lines
+
+            elapsed = _elapsed_ms(start)
+            logger.info(
+                "tool={} | ok count={} truncated={} | elapsed={}ms",
+                tool_name,
+                len(lines),
+                truncated,
+                elapsed,
+            )
+            return _ok(
+                container_name=container_name,
+                count=len(lines),
+                lines=lines,
+                truncated=truncated,
+            )
+        except Exception as e:
+            elapsed = _elapsed_ms(start)
+            logger.error(
+                "tool={} | error={} | elapsed={}ms",
+                tool_name,
+                str(e),
+                elapsed,
+                exc_info=True,
+            )
+            return _err("ssh_error", f"SSH 执行失败: {e}")
+
+    return get_container_logs
+
+
+def build_get_deployment_status_tool(settings: Settings, store: DeploymentStateStore | None = None):
+    """构建 get_deployment_status 工具（只读查询，不入审批名单）。
+
+    查询 deployments 表中指定 thread_id 的部署记录。
+    查询不到是正常结果（返回 found=false），不是错误。
+    store 缺省用单例（backend/checkpoints/deployments.db），测试注入临时库。
+    """
+
+    @tool
+    async def get_deployment_status(thread_id: str) -> str:
+        """查询指定会话（thread_id）的部署状态。
+
+        Args:
+            thread_id: 会话 ID（一次部署 = 一个会话一条记录）
+        """
+        tool_name = "get_deployment_status"
+        start = time.perf_counter()
+        logger.info("tool={} | args=thread_id={}", tool_name, thread_id)
+
+        # 参数校验
+        if not thread_id or not thread_id.strip():
+            elapsed = _elapsed_ms(start)
+            logger.error(
+                "tool={} | error=empty_thread_id | elapsed={}ms",
+                tool_name,
+                elapsed,
+            )
+            return _err("validation_error", "thread_id 不能为空")
+
+        resolved_store = store if store is not None else get_deployment_store()
+        try:
+            record = await resolved_store.get_by_thread(thread_id.strip())
+            elapsed = _elapsed_ms(start)
+            if record is None:
+                logger.info(
+                    "tool={} | not_found | elapsed={}ms", tool_name, elapsed
+                )
+                return _ok(found=False, deployment=None)
+            logger.info("tool={} | ok | elapsed={}ms", tool_name, elapsed)
+            return _ok(found=True, deployment=record)
+        except Exception as e:
+            elapsed = _elapsed_ms(start)
+            logger.error(
+                "tool={} | error={} | elapsed={}ms",
+                tool_name,
+                str(e),
+                elapsed,
+                exc_info=True,
+            )
+            return _err("state_error", f"查询部署状态失败: {e}")
+
+    return get_deployment_status
+
+
+def build_list_deployment_history_tool(settings: Settings, store: DeploymentStateStore | None = None):
+    """构建 list_deployment_history 工具（只读查询，不入审批名单）。
+
+    按更新时间倒序查询部署历史，可按容器过滤。
+    store 缺省用单例（backend/checkpoints/deployments.db），测试注入临时库。
+    """
+
+    @tool
+    async def list_deployment_history(container: str = "", limit: int = 20) -> str:
+        """查询部署历史（按时间倒序，最新在前）。
+
+        Args:
+            container: 容器名过滤（可选，空则查全部）
+            limit: 返回条数上限（1~100，默认 20）
+        """
+        tool_name = "list_deployment_history"
+        start = time.perf_counter()
+        logger.info(
+            "tool={} | args=container={} limit={}",
+            tool_name,
+            container,
+            limit,
+        )
+
+        # 参数校验
+        if not 1 <= int(limit) <= 100:
+            elapsed = _elapsed_ms(start)
+            logger.error(
+                "tool={} | error=invalid_limit | elapsed={}ms",
+                tool_name,
+                elapsed,
+            )
+            return _err("validation_error", "limit 必须在 1~100 之间", limit=limit)
+
+        resolved_store = store if store is not None else get_deployment_store()
+        try:
+            history = await resolved_store.list_history(
+                container=container.strip() if container else "", limit=int(limit)
+            )
+            elapsed = _elapsed_ms(start)
+            logger.info(
+                "tool={} | count={} | elapsed={}ms", tool_name, len(history), elapsed
+            )
+            return _ok(history=history, count=len(history))
+        except Exception as e:
+            elapsed = _elapsed_ms(start)
+            logger.error(
+                "tool={} | error={} | elapsed={}ms",
+                tool_name,
+                str(e),
+                elapsed,
+                exc_info=True,
+            )
+            return _err("state_error", f"查询部署历史失败: {e}")
+
+    return list_deployment_history
+
+
+def build_rollback_deployment_tool(settings: Settings, store: DeploymentStateStore | None = None):
+    """构建 rollback_deployment 工具（回滚部署，需审批，入 APPROVAL_REQUIRED_TOOLS）。
+
+    入参：deployment_id（必填，list_deployment_history 可查）+ container_name（可选覆盖）。
+    从 deployments 表查出历史记录的 image，SSH 执行 stop → rm -f → run -d（一条命令链），
+    复用与 stop/remove/start_container 相同的 SSH 命令逻辑。
+    落库（status=rolled_back + rollback_from）由 DeploymentStateMiddleware 在工具成功后完成。
+    容器名/镜像名均 shlex.quote 防注入；容器名（含可选参数）必须命中白名单。
+
+    安全校验：
+    - deployment_id 必须为正整数
+    - 历史记录必须存在且有 image（无镜像无法回滚）
+    - 目标容器名（参数或历史记录）必须在 container_names 白名单内
+    """
+
+    @tool
+    async def rollback_deployment(deployment_id: int, container_name: str | None = None) -> str:
+        """回滚部署：用历史版本镜像重新部署目标容器（先停旧容器、删除、再启动）。触发人工审批。
+
+        Args:
+            deployment_id: 目标部署记录 id（list_deployment_history 查询可得）
+            container_name: 容器名（可选，缺省用历史记录中的容器名；必须命中白名单）
+        """
+        tool_name = "rollback_deployment"
+        start = time.perf_counter()
+        logger.info(
+            "tool={} | args=deployment_id={} container_name={}",
+            tool_name,
+            deployment_id,
+            container_name,
+        )
+
+        # 参数校验
+        if deployment_id is None or int(deployment_id) < 1:
+            elapsed = _elapsed_ms(start)
+            logger.error(
+                "tool={} | error=invalid_deployment_id | elapsed={}ms",
+                tool_name,
+                elapsed,
+            )
+            return _err("validation_error", "deployment_id 必须为正整数", deployment_id=deployment_id)
+        if container_name is not None and not container_name.strip():
+            elapsed = _elapsed_ms(start)
+            logger.error(
+                "tool={} | error=empty_container_name | elapsed={}ms",
+                tool_name,
+                elapsed,
+            )
+            return _err("validation_error", "container_name 不能为空")
+
+        resolved_store = store if store is not None else get_deployment_store()
+        try:
+            # 查历史部署记录（回滚目标）
+            record = await resolved_store.get_by_id(int(deployment_id))
+        except Exception as e:
+            elapsed = _elapsed_ms(start)
+            logger.error(
+                "tool={} | error={} | elapsed={}ms",
+                tool_name,
+                str(e),
+                elapsed,
+                exc_info=True,
+            )
+            return _err("state_error", f"查询部署记录失败: {e}", deployment_id=deployment_id)
+        if record is None:
+            elapsed = _elapsed_ms(start)
+            logger.error(
+                "tool={} | error=deployment_not_found | elapsed={}ms",
+                tool_name,
+                elapsed,
+            )
+            return _err(
+                "not_found",
+                f"部署记录不存在: deployment_id={deployment_id}",
+                deployment_id=deployment_id,
+            )
+
+        image = record.get("image")
+        if not image:
+            elapsed = _elapsed_ms(start)
+            logger.error(
+                "tool={} | error=no_image_in_record | elapsed={}ms",
+                tool_name,
+                elapsed,
+            )
+            return _err(
+                "validation_error",
+                f"部署记录 {deployment_id} 没有镜像信息，无法回滚",
+                deployment_id=deployment_id,
+            )
+
+        # 目标容器：参数优先，否则历史记录
+        target_container = container_name.strip() if container_name else (record.get("container") or "")
+        if not target_container:
+            elapsed = _elapsed_ms(start)
+            logger.error(
+                "tool={} | error=no_container_in_record | elapsed={}ms",
+                tool_name,
+                elapsed,
+            )
+            return _err(
+                "validation_error",
+                f"部署记录 {deployment_id} 没有容器信息，请用 container_name 指定",
+                deployment_id=deployment_id,
+            )
+
+        # 容器名白名单校验（回滚是高危操作，目标容器必须命中白名单）
+        if not settings.container_names or target_container not in settings.container_names:
+            elapsed = _elapsed_ms(start)
+            logger.error(
+                "tool={} | error=container_not_allowed | elapsed={}ms",
+                tool_name,
+                elapsed,
+            )
+            return _err(
+                "validation_error",
+                f"container_name 不在白名单内，仅允许 {settings.container_names}",
+                container_name=target_container,
+            )
+
+        # 执行回滚：stop（容错，容器可能未运行）→ rm -f（必须成功）→ run -d（必须成功）
+        container_q = shlex.quote(target_container)
+        image_q = shlex.quote(image)
+        cmd = (
+            f"docker stop {container_q} 2>/dev/null || true; "
+            f"docker rm -f {container_q} && "
+            f"docker run -d --name {container_q} {image_q}"
+        )
+        logger.info(
+            "tool={} | host={} | cmd={}",
+            tool_name,
+            settings.server_host,
+            _cmd_summary(cmd),
+        )
+        try:
+            exit_code, out, err = await _run_ssh(settings, cmd)
+        except Exception as e:
+            elapsed = _elapsed_ms(start)
+            logger.error(
+                "tool={} | error={} | elapsed={}ms",
+                tool_name,
+                str(e),
+                elapsed,
+                exc_info=True,
+            )
+            return _err("ssh_error", f"SSH 执行失败: {e}")
+
+        if exit_code != 0:
+            elapsed = _elapsed_ms(start)
+            logger.error(
+                "tool={} | error=rollback_failed exit={} | elapsed={}ms",
+                tool_name,
+                exit_code,
+                elapsed,
+            )
+            return _err(
+                "command_failed",
+                "回滚执行失败（删除或启动容器失败）",
+                exit_code=exit_code,
+                stderr=err,
+            )
+
+        elapsed = _elapsed_ms(start)
+        logger.info("tool={} | ok | elapsed={}ms", tool_name, elapsed)
+        return _ok(
+            container=target_container,
+            image=image,
+            rollback_from=int(deployment_id),
+        )
+
+    return rollback_deployment
+
+
 def build_tools(settings: Settings) -> list:
-    """构建 15 个业务工具列表（8 个需审批的写操作 + 7 个只读/巡检/文件操作）。"""
+    """构建 20 个业务工具列表（9 个需审批的写操作 + 11 个只读/巡检/文件/状态查询）。"""
     return [
         build_git_pull_code_tool(settings),
         build_docker_image_tool(settings),
@@ -2047,6 +2556,11 @@ def build_tools(settings: Settings) -> list:
         build_delete_workspace_file_tool(settings),
         build_add_whitelist_entry_tool(settings),
         build_remove_whitelist_entry_tool(settings),
+        build_check_server_environment_tool(settings),
+        build_get_container_logs_tool(settings),
+        build_get_deployment_status_tool(settings),
+        build_list_deployment_history_tool(settings),
+        build_rollback_deployment_tool(settings),
     ]
 
 
@@ -2067,4 +2581,9 @@ __all__ = [
     "build_delete_workspace_file_tool",
     "build_add_whitelist_entry_tool",
     "build_remove_whitelist_entry_tool",
+    "build_check_server_environment_tool",
+    "build_get_container_logs_tool",
+    "build_get_deployment_status_tool",
+    "build_list_deployment_history_tool",
+    "build_rollback_deployment_tool",
 ]

@@ -17,20 +17,22 @@
 
 ## 功能特性
 
-- **工具调用**：通过受控工具（git 拉取、docker 构建/启停、工作区文件操作、白名单管理）操作目标服务器，Agent 只负责编排，实际命令经 SSH 在目标服务器执行
-- **任务编排**：按标准部署 SOP 顺序自动执行（`stop → remove → start` 每步独立审批）
-- **人工审批（Human-in-the-loop）**：高风险操作（停/删/起容器、写/删工作区文件、改白名单）需用户批准后才执行
-- **实时交互**：SSE 流式输出 Agent 进度、工具调用卡片与运行状态
-- **对话记忆**：会话（thread）与消息落盘 SQLite checkpoint，支持多会话历史恢复与跨端同步
+- **工具调用**：20 个受控工具（git 拉取、docker 构建/启停/巡检、工作区文件读写、白名单管理、部署状态查询/回滚），Agent 只负责编排，实际命令经 SSH 在目标服务器执行
+- **任务编排**：按标准部署 SOP 顺序自动执行；4 个只读子 Agent（code / build / deploy-planner / monitor）分担拉码、构建、规划、巡检，高风险写操作只收口主 Agent
+- **人工审批（Human-in-the-loop）**：高风险操作（默认停/起容器、回滚，可配 `APPROVAL_REQUIRED_TOOLS`）需用户批准后才执行
+- **实时交互**：SSE 流式输出 Agent 进度、工具调用卡片、实时构建日志（`build_log`）与任务状态
+- **对话记忆**：会话落盘 SQLite checkpoint（`backend/checkpoints/checkpoints.db`），后端重启后仍可续聊，支持多会话历史恢复与跨端同步
+- **部署状态与审计**：工具成功后自动更新部署状态（`deployments` 表），全链路操作审计落库（`audit_log` 表），可查历史与回滚
 - **错误处理**：命令失败重试一次，仍失败如实上报并打码敏感信息
-- **安全设计**：部署产物命名白名单双重校验；密码/Token 不进 system prompt；日志打码
+- **安全设计**：容器名/镜像前缀/工作区三重白名单校验；密码/Token 不进 system prompt；日志打码
 
 ## 技术栈
 
 | 类别 | 选型 | 用途 |
 |------|------|------|
-| Agent 框架 | DeepAgents 0.4.12 | Agent 核心 + 中间件 + Skills 挂载 |
+| Agent 框架 | DeepAgents 0.4.12 | Agent 核心 + 中间件 + Skills 挂载 + 子 Agent |
 | 工作流引擎 | LangGraph（DeepAgents 内置） | 状态机、checkpoint、interrupt/resume |
+| 检查点存储 | langgraph-checkpoint-sqlite | 对话记忆 SQLite 持久化 |
 | LLM 接入 | langchain-openai 1.2.1 | 兼容 OpenAI 协议的模型 |
 | Web 框架 | FastAPI ≥0.135.2 | HTTP 接口 + SSE 流式响应 |
 | SSH 客户端 | paramiko ≥3.5.0 | 远程执行 git/docker 命令 |
@@ -49,10 +51,14 @@ flowchart TD
     API --> AG[Agent 单例 factory.create_deploy_agent]
 
     AG --> LLM[ChatOpenAI LLM 决策与生成]
-    AG --> MW[中间件层 EnvScoping + DeployApproval]
-    AG --> TOOLS[业务工具 tools/]
+    AG --> MW[中间件层 AuditLog → RiskControl → EnvScoping → DeploymentState → DeployApproval]
+    AG --> TOOLS[业务工具 tools/ 共 20 个]
+    AG --> SUB[子 Agent code/build/deploy-planner/monitor 只读委派]
     AG --> SKILLS[Skills 挂载 只读 SKILL.md]
     AG --> CKPT[SQLite checkpoint 对话记忆]
+    AG --> STORE[deployments 表 + audit_log 表]
+
+    SUB --> MW
 
     MW --> TOOLS
     TOOLS -->|paramiko SSH asyncio.to_thread| SRV[目标服务器]
@@ -69,18 +75,20 @@ ai_devops/
 ├── backend/                  # Python 后端（uv 管理）
 │   ├── src/deploy_agent/     # 主包
 │   │   ├── api.py            # FastAPI 路由 + SSE 事件流
-│   │   ├── factory.py        # Agent 装配（LLM/Skills/中间件/后端）
+│   │   ├── factory.py        # Agent 装配（LLM/Skills/中间件/子 Agent/后端）
 │   │   ├── runtime.py        # RuntimeContext
-│   │   ├── middleware.py     # EnvScoping + 审批中间件
+│   │   ├── middleware.py     # AuditLog + RiskControl + EnvScoping + DeploymentState + 审批中间件
+│   │   ├── state.py          # 部署状态存储（deployments 表）
+│   │   ├── audit.py          # 操作审计存储（audit_log 表）
 │   │   ├── prompts.py        # 系统提示词
 │   │   ├── settings.py       # pydantic-settings 配置加载
 │   │   ├── logging.py        # loguru 日志配置
-│   │   └── tools/            # git/docker/文件/白名单 工具
+│   │   └── tools/            # git/docker/文件/白名单/状态/回滚 20 个工具
 │   ├── skills/deployment/SKILL.md   # 部署 SOP 技能文档（只读）
-│   ├── tests/                # pytest 测试
-│   ├── scripts/              # smoke_test 等辅助脚本
-│   ├── checkpoints/          # 对话记忆 SQLite 落盘（gitignore）
+│   ├── tests/                # pytest 测试（含 evals 门禁，见「测试」）
+│   ├── checkpoints/          # 对话记忆/部署状态/审计 SQLite 落盘（gitignore）
 │   ├── logs/                 # 运行日志（gitignore）
+│   ├── whitelist.json        # 容器/镜像白名单运行时持久化（对话中增删后生成）
 │   ├── .env                  # 后端配置（勿提交）
 │   ├── pyproject.toml        # 依赖 + uv 配置
 │   └── uv.lock
@@ -90,6 +98,10 @@ ai_devops/
 │   ├── lib/                  # SSE 解析、日志、后端请求封装
 │   ├── __tests__/            # vitest 测试
 │   └── .env.development      # 前端环境变量
+├── docs/                     # ADR 决策、词汇表、路线图、agent 协作规范
+│   ├── adr/                  # 架构决策记录（ADR-0001 ~ ADR-0005）
+│   ├── 词汇表.md
+│   └── 路线图.md
 ├── 架构分析文档.md            # 架构设计分析
 ├── 项目运转流程.md            # 运转流程/模块职责/时序详解
 ├── 前端规划方案.md            # 前端规划
@@ -106,10 +118,10 @@ uv sync                    # 安装依赖（生成 .venv）
 Copy-Item .env.example .env  # 按需填写配置（见「配置说明」）
 ```
 
-启动服务（注意：Windows 中文路径下 `uv run uvicorn` 的 trampoline 会报错，务必用 `python -m` 方式，见[常见问题](#常见问题)）：
+启动服务（注意：中文路径下不要用 `uv run uvicorn` 或 `.venv\Scripts\uvicorn.exe`，uv trampoline 无法解析脚本路径，务必用 `python -m` 方式，见[常见问题](#常见问题)）：
 
 ```powershell
-uv run python -m uvicorn deploy_agent.api:app --host 127.0.0.1 --port 8000
+.venv\Scripts\python -m uvicorn deploy_agent.api:app --host 127.0.0.1 --port 8000
 ```
 
 验证：
@@ -138,16 +150,22 @@ npm run dev               # http://localhost:3000
 
 | 变量 | 说明 |
 |------|------|
-| `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL` | 大模型（OpenAI 兼容接口） |
-| `GITLAB_USER` / `GITLAB_TOKEN` | GitLab 账号/Token（拉取私有仓库鉴权，匿名可留空） |
+| `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL` / `OPENAI_TEMPERATURE` | 大模型（OpenAI 兼容接口） |
+| `MODEL_MAX_TOKENS` | 模型最大输出 tokens（缺省 8192） |
+| `GITLAB_USER` / `GITLAB_TOKEN` | GitLab 账号/Token（注入到用户指定的仓库地址做鉴权，可留空） |
 | `SERVER_HOST` / `SERVER_PORT` / `SERVER_USER` / `SERVER_PASSWORD` | 目标服务器 SSH 连接信息 |
 | `CONTAINER_NAMES` | 容器实例名白名单（逗号分隔） |
-| `IMAGE_PREFIX` | 镜像名前缀（构建产物必须以此开头） |
-| `WORKSPACES` | workspace 白名单（逗号分隔） |
+| `IMAGE_PREFIX` | 镜像名前缀白名单（逗号分隔多值，保持向后兼容的变量名） |
+| `WORKSPACES` | workspace 白名单（逗号分隔，只走 `.env`） |
+| `WHITELIST_FILE` | 白名单持久化 JSON 路径（缺省 `backend/whitelist.json`） |
 | `HEALTH_URL` | 健康检查地址 |
-| `APPROVAL_REQUIRED_TOOLS` | 需要人工审批的工具列表（逗号分隔） |
+| `IMAGE_TAG_FORMAT` | 镜像 tag 时间格式（缺省 `%Y%m%d-%H%M%S`） |
+| `DOCKER_HOST` | Docker 主机（空=本机 docker daemon） |
+| `APPROVAL_REQUIRED_TOOLS` | 需要人工审批的工具列表（缺省 `stop_container,start_container,rollback_deployment`） |
 | `HOST` / `PORT` | uvicorn 监听地址/端口 |
 | `LOG_LEVEL` / `LOG_DIR` | 日志级别与目录 |
+
+> 对话中增删容器/镜像白名单会持久化到 `whitelist.json`，一旦该文件存在即优先于 `.env` 的 `CONTAINER_NAMES` / `IMAGE_PREFIX`；删掉它可回到 `.env` 管理。
 
 ### 前端配置（frontend/.env.development）
 
@@ -163,16 +181,22 @@ npm run dev               # http://localhost:3000
 | GET | `/healthz` | 健康检查 |
 | GET | `/api/agent/threads` | 会话（thread）列表 |
 | GET | `/api/agent/threads/{thread_id}/messages` | 会话消息历史 |
-| POST | `/api/agent/chat` | 对话入口，SSE 流式返回事件（`stream_start` / `agent_state` / `message_delta` / `approval_required` / `stream_end` / `error` 等） |
+| DELETE | `/api/agent/threads/{thread_id}` | 删除会话（幂等） |
+| GET | `/api/agent/audit` | 操作审计记录（可选 `thread_id` / `tool_name` / `limit` 过滤） |
+| POST | `/api/agent/chat` | 对话入口，SSE 流式返回事件（`agent_state` / `message_delta` / `tool_call_start` / `tool_call_end` / `log` / `build_log` / `task_status` / `approval_required` / `stream_complete` / `error` 等） |
 
 ## 测试
 
 ```powershell
-# 后端（backend/ 目录下）
-uv run pytest -x -v
+# 后端（backend/ 目录下；三个手工 httpx 脚本必须 --ignore，见 AGENTS.md 关键坑 1）
+.venv\Scripts\python -m pytest tests -q --ignore=tests/test_approve.py --ignore=tests/test_sse.py --ignore=tests/test_check_container_and_images.py --ignore=tests/evals
+
+# Evals 门禁（慢，真调小模型，需 OPENAI_API_KEY）
+.venv\Scripts\python -m pytest tests/evals -q -m gate
 
 # 前端（frontend/ 目录下）
 npm test
+npm run lint
 ```
 
 ## 常见问题
@@ -182,7 +206,7 @@ npm test
 项目路径包含中文字符时，uv 生成的 venv 内可执行文件（如 `uvicorn.exe`）是 uv trampoline 启动器，无法解析脚本路径（直接运行 `.venv\Scripts\uvicorn.exe` 也会报错）。**解决**：改用模块方式启动：
 
 ```powershell
-uv run python -m uvicorn deploy_agent.api:app --host 127.0.0.1 --port 8000
+.venv\Scripts\python -m uvicorn deploy_agent.api:app --host 127.0.0.1 --port 8000
 ```
 
 ### 前端报错「无法连接后端服务」
@@ -197,5 +221,8 @@ uv run python -m uvicorn deploy_agent.api:app --host 127.0.0.1 --port 8000
 
 - [项目运转流程.md](项目运转流程.md) — 模块职责、时序、审批机制、安全设计详解
 - [架构分析文档.md](架构分析文档.md) — 架构设计分析
+- [总体方案实现.md](总体方案实现.md) — 总体方案与实现对照
 - [前端规划方案.md](前端规划方案.md) — 前端方案设计
+- [docs/adr/](docs/adr/) — 架构决策记录（优化路线、evals、成本可观测、多 SubAgent 拆分）
+- [docs/词汇表.md](docs/词汇表.md) — 术语表；[docs/路线图.md](docs/路线图.md) — 路线图
 - [Trae任务模板-含日志功能.md](Trae任务模板-含日志功能.md) — 任务拆分模板

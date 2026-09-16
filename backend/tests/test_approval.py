@@ -22,6 +22,7 @@ from langchain_core.messages import AIMessage, ToolMessage
 from langgraph.errors import GraphInterrupt
 
 from deploy_agent import middleware
+from deploy_agent.audit import AuditLogStore
 from deploy_agent.middleware import DeployApprovalMiddleware, EnvScopingMiddleware
 from deploy_agent.settings import Settings
 
@@ -133,14 +134,15 @@ async def test_approval_approve_executes(settings, monkeypatch):
     assert ai_msg.tool_calls[0]["name"] == "stop_container"
 
 
-async def test_approval_reject_blocks(settings, monkeypatch):
-    """reject 决策移除 tool_call + 追加错误 ToolMessage 文本。"""
+async def test_approval_reject_blocks(settings, monkeypatch, tmp_path):
+    """reject 决策移除 tool_call + 追加错误 ToolMessage 文本 + 审计落 rejected。"""
     def fake_interrupt(value):
         return {"decisions": [{"type": "reject", "message": "用户拒绝停止容器"}]}
 
     monkeypatch.setattr(middleware, "interrupt", fake_interrupt)
 
-    mw = DeployApprovalMiddleware(settings)
+    store = AuditLogStore(tmp_path / "audit.db")
+    mw = DeployApprovalMiddleware(settings, audit_store=store)
     state = _make_state([
         _make_tool_call("stop_container", {"container_name": "ontology-graph"})
     ])
@@ -153,6 +155,16 @@ async def test_approval_reject_blocks(settings, monkeypatch):
     assert len(ai_msg.tool_calls) == 0
     # AI 消息追加拒绝原因
     assert "用户拒绝停止容器" in ai_msg.content
+
+    # 审计落 rejected
+    rows = await store.list()
+    assert len(rows) == 1
+    assert rows[0]["status"] == "rejected"
+    assert rows[0]["tool_name"] == "stop_container"
+    assert rows[0]["thread_id"] == "test-thread-1"
+    assert rows[0]["risk_level"] == "high"
+    assert "用户拒绝停止容器" in rows[0]["result_summary"]
+    await store.close()
 
 
 async def test_approval_decision_count_mismatch(settings, monkeypatch):
@@ -183,14 +195,15 @@ async def test_approval_decision_count_mismatch(settings, monkeypatch):
         await mw.aafter_model(state, _FakeRuntime())
 
 
-async def test_approval_edit_treated_as_reject(settings, monkeypatch):
+async def test_approval_edit_treated_as_reject(settings, monkeypatch, tmp_path):
     """edit 决策按 reject 处理。"""
     def fake_interrupt(value):
         return {"decisions": [{"type": "edit", "edited_action": {"name": "stop_container", "args": {}}}]}
 
     monkeypatch.setattr(middleware, "interrupt", fake_interrupt)
 
-    mw = DeployApprovalMiddleware(settings)
+    store = AuditLogStore(tmp_path / "audit.db")
+    mw = DeployApprovalMiddleware(settings, audit_store=store)
     state = _make_state([
         _make_tool_call("stop_container", {"container_name": "ontology-graph"})
     ])
@@ -199,6 +212,10 @@ async def test_approval_edit_treated_as_reject(settings, monkeypatch):
     ai_msg = result["messages"][0]
     assert len(ai_msg.tool_calls) == 0
     assert "编辑决策暂不支持" in ai_msg.content
+
+    rows = await store.list()
+    assert rows[0]["status"] == "rejected"
+    await store.close()
 
 
 # ==================== EnvScopingMiddleware ====================

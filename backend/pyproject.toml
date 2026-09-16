@@ -34,3 +34,7 @@ default = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "gate: M1 PR 门禁快集（golden 全量，真调小模型）",
+    "nightly: nightly 重型集（沙箱全量 + 回放池，待实施）",
+]
